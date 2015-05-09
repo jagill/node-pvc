@@ -1,5 +1,6 @@
 pvc
 ===
+[![Circle CI](https://circleci.com/gh/jagill/node-pvc/tree/master.svg?style=shield)](https://circleci.com/gh/jagill/node-pvc/tree/master)
 
 pvc is a lightweight (no dependencies!) collection of utilities for Node.js
 streams in object mode.
