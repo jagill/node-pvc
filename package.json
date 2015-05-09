@@ -1,0 +1,35 @@
+{
+  "name": "pvc",
+  "version": "0.0.1",
+  "description": "Basic utilities for object streams.",
+  "main": "dist/pvc.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "gulp test"
+  },
+  "author": "James Gill <jamesagill@gmail.com> (https://github.com/jagill)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jagill/node-pvc.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "stream",
+    "streams2",
+    "through",
+    "transform"
+  ],
+  "devDependencies": {
+    "chai": "^2.0.0",
+    "coffee-script": "^1.9.1",
+    "gulp": "3.8.11",
+    "gulp-coffee": "^2.3.1",
+    "gulp-mocha": "^2.0.0",
+    "mocha": "^2.1.0",
+    "sinon": "^1.14.1"
+  },
+  "dependencies": {
+  }
+}
