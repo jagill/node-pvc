@@ -1,5 +1,5 @@
 (function() {
-  var ArraySource, AsyncFilter, AsyncMap, Debounce, Doto, Duplex, Filter, Map, Readable, Separate, Splitter, Transform, _path, fs, ref, util,
+  var ArraySource, AsyncFilter, AsyncMap, Debounce, Duplex, Filter, Map, Merge, Readable, Separate, Splitter, Transform, Zip, _path, fs, ref, util,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
@@ -195,6 +195,18 @@
   };
 
 
+  /**
+  Just do a function to a stream, don't modify anything.
+   */
+
+  exports.doto = function(f) {
+    return new Map(function(x) {
+      f(x);
+      return x;
+    });
+  };
+
+
   /*
   Map a given stream (in objectMode) through a provided async function
   f: (in, callback), where callback: (err, out)
@@ -367,35 +379,159 @@
 
 
   /**
-  Just do a function to a stream, don't modify anything.
-  XXX: Not yet working, don't use.
+  Merge multiple streams into one.  The output stream will emit indescriminately
+  from the input streams, with no order guarantees.  The parameter streams is
+  an array of streams.
    */
 
-  Doto = (function(superClass) {
-    extend(Doto, superClass);
+  Merge = (function(superClass) {
+    extend(Merge, superClass);
 
-    function Doto(options, f) {
-      if (typeof options === 'function') {
-        f = options;
-        options = {};
+    function Merge(streams) {
+      var j, len, s;
+      this.streams = streams;
+      for (j = 0, len = streams.length; j < len; j++) {
+        s = streams[j];
+        s.on('end', (function(_this) {
+          return function() {
+            var idx;
+            idx = _this.streams.indexOf(s);
+            _this.streams.splice(idx, 1);
+            if (_this.streams.length === 0) {
+              return _this.push(null);
+            }
+          };
+        })(this));
+        s.on('error', (function(_this) {
+          return function(err) {
+            return _this.emit('error', err);
+          };
+        })(this));
+        s.on('readable', (function(_this) {
+          return function() {
+            return _this._pump();
+          };
+        })(this));
       }
-      options.objectMode = true;
-      this.options = options;
-      this.f = f;
-      Doto.__super__.constructor.call(this, options);
+      Merge.__super__.constructor.call(this, {
+        objectMode: true
+      });
     }
 
-    Doto.prototype._transform = function(x, encoding, done) {
-      this.f(x);
-      return this.push(x);
+    Merge.prototype._pump = function() {
+      var chunk, j, len, ref1, s;
+      ref1 = this.streams;
+      for (j = 0, len = ref1.length; j < len; j++) {
+        s = ref1[j];
+        while ((chunk = s.read()) != null) {
+          if (!this.push(chunk)) {
+            return;
+          }
+        }
+      }
     };
 
-    return Doto;
+    Merge.prototype._read = function(size) {
+      return this._pump();
+    };
 
-  })(Transform);
+    return Merge;
 
-  exports.doto = function(opt, f) {
-    return new Doto(opt, f);
+  })(Readable);
+
+  exports.merge = function(streams) {
+    return new Merge(streams);
+  };
+
+
+  /**
+  Zip multiple streams into one.  The output will be an object with
+  the entries from each of the input streams, with the keys being the those
+  given the streamMap.  It won't emit an output until
+  it has an entry from each input.  If one of the input streams ends, this stream
+  will also end.
+  
+  For example, if `zip = new Zip({num: numStream, alph: alphStream}), and
+  numStream emits 1, 2, 3, ... , while
+  alphStream emits 'one', 'two', 'three', ... ,
+  then
+  zip emits {num: 1, alph: 'one'}, {num: 2, alph: 'two'}, {num: 3, alph: 'three'},
+   ...
+   */
+
+  Zip = (function(superClass) {
+    extend(Zip, superClass);
+
+    function Zip(streamMap1) {
+      var name, ref1, s;
+      this.streamMap = streamMap1;
+      this.current = {};
+      this.keys = [];
+      ref1 = this.streamMap;
+      for (name in ref1) {
+        s = ref1[name];
+        this.keys.push(name);
+        s.on('end', (function(_this) {
+          return function() {
+            return _this.push(null);
+          };
+        })(this));
+        s.on('error', (function(_this) {
+          return function(err) {
+            return _this.emit('error', err);
+          };
+        })(this));
+        s.on('readable', (function(_this) {
+          return function() {
+            return _this._pump();
+          };
+        })(this));
+      }
+      Zip.__super__.constructor.call(this, {
+        objectMode: true
+      });
+    }
+
+    Zip.prototype._pump = function() {
+      var canPush, chunk, gotAllMissing, gotData, j, key, len, ref1, results;
+      canPush = true;
+      results = [];
+      while (canPush) {
+        gotAllMissing = true;
+        gotData = false;
+        ref1 = this.keys;
+        for (j = 0, len = ref1.length; j < len; j++) {
+          key = ref1[j];
+          if (this.current[key] == null) {
+            chunk = this.streamMap[key].read();
+            if (chunk != null) {
+              gotData = true;
+              this.current[key] = chunk;
+            } else {
+              gotAllMissing = false;
+            }
+          }
+        }
+        if (gotData && gotAllMissing) {
+          canPush = this.push(this.current);
+          results.push(this.current = {});
+        } else {
+          results.push(canPush = false);
+        }
+      }
+      return results;
+    };
+
+    Zip.prototype._read = function(size) {
+      return this._pump();
+    };
+
+    return Zip;
+
+  })(Readable);
+
+  exports.zip = function(streamMap) {
+    return new Zip(streamMap);
   };
 
 }).call(this);

@@ -313,4 +313,124 @@
     });
   });
 
+  describe('merge', function() {
+    it('should emit a single stream unchanged', function() {
+      var in1, s;
+      in1 = new pvc.arraySource([1, 2]);
+      s = new pvc.merge([in1]);
+      assert.equal(s.read(), 1);
+      assert.equal(s.read(), 2);
+      return assert.isNull(s.read());
+    });
+    return it('should combine two streams', function() {
+      var c, i, in1, in2, len, output, ref, results, s, x;
+      in1 = new pvc.arraySource(['a', 'b']);
+      in2 = new pvc.arraySource(['c', 'd', 'e']);
+      s = new pvc.merge([in1, in2]);
+      output = {};
+      while (x = s.read()) {
+        output[x] = true;
+      }
+      ref = ['a', 'b', 'c', 'd', 'e'];
+      results = [];
+      for (i = 0, len = ref.length; i < len; i++) {
+        c = ref[i];
+        results.push(assert.isTrue(output[c]));
+      }
+      return results;
+    });
+  });
+
+  describe('zip', function() {
+    it('should zip a single stream', function() {
+      var in1, s;
+      in1 = new pvc.arraySource([1, 2]);
+      s = new pvc.zip({
+        num: in1
+      });
+      assert.deepEqual(s.read(), {
+        num: 1
+      });
+      assert.deepEqual(s.read(), {
+        num: 2
+      });
+      return assert.isNull(s.read());
+    });
+    it('should zip two streams', function() {
+      var in1, in2, s;
+      in1 = new pvc.arraySource([1, 2]);
+      in2 = new pvc.arraySource(['a', 'b']);
+      s = new pvc.zip({
+        num: in1,
+        alph: in2
+      });
+      assert.deepEqual(s.read(), {
+        num: 1,
+        alph: 'a'
+      });
+      assert.deepEqual(s.read(), {
+        num: 2,
+        alph: 'b'
+      });
+      return assert.isNull(s.read());
+    });
+    it('should finish after the shortest input finishes', function() {
+      var in1, in2, s;
+      in1 = new pvc.arraySource([1, 2, 3]);
+      in2 = new pvc.arraySource(['a', 'b']);
+      s = new pvc.zip({
+        num: in1,
+        alph: in2
+      });
+      assert.deepEqual(s.read(), {
+        num: 1,
+        alph: 'a'
+      });
+      assert.deepEqual(s.read(), {
+        num: 2,
+        alph: 'b'
+      });
+      return assert.isNull(s.read());
+    });
+    return it('should finish immediately with an empty array', function() {
+      var in1, in2, in3, s;
+      in1 = new pvc.arraySource([1, 2]);
+      in2 = new pvc.arraySource(['a', 'b']);
+      in3 = new pvc.arraySource([]);
+      s = new pvc.zip({
+        num: in1,
+        alph: in2,
+        empty: in3
+      });
+      return assert.isNull(s.read());
+    });
+  });
+
+  describe('doto', function() {
+    it('should call the given function on the elements', function() {
+      var s, total;
+      total = 0;
+      s = new pvc.doto(function(x) {
+        return total += x;
+      });
+      s.write(1);
+      s.read();
+      assert.equal(total, 1);
+      s.write(3);
+      s.read();
+      return assert.equal(total, 4);
+    });
+    return it('should pass through the elements unchanged', function() {
+      var a1, a2, s;
+      s = new pvc.doto(function() {});
+      a1 = {};
+      a2 = {};
+      s.write(a1);
+      s.write(a2);
+      assert.equal(s.read(), a1);
+      assert.equal(s.read(), a2);
+      return assert.isNull(s.read());
+    });
+  });
+
 }).call(this);
