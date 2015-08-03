@@ -5,29 +5,6 @@ util = require 'util'
 
 
 ###
-Convert an array into a Readable stream.
-
-source = new ArraySource([1, 2])
-source.read() # 1
-source.read() # 2
-source.read() # null
-###
-class ArraySource extends Readable
-  constructor: (@array, opt={}) ->
-    opt.objectMode = true
-    super opt
-    @index = 0
-
-  _read: ->
-    if @index >= @array.length
-      @push null
-    else
-      @push @array[@index]
-      @index++
-
-exports.arraySource = (arr) -> new ArraySource arr
-
-###
 Convert incoming arrays into their constituent elements.
 
 Additional opt fields:
@@ -37,8 +14,7 @@ recursive: If true, separate any arrays that were found from the separation
 ###
 class Separate extends Transform
   constructor: (opt={}) ->
-    opt.objectMode = true
-    super opt
+    super objectMode: true
     @lax = opt.lax
     @recursive = opt.recursive
 
@@ -54,7 +30,7 @@ class Separate extends Transform
       if @lax
         @push arr
       else
-        @emit 'error', "Found non-array value: #{arr}"
+        @emit 'exception', "Found non-array value: #{arr}"
     else
       @_pushArray arr
     done()
@@ -65,7 +41,7 @@ exports.separate = (opt) -> new Separate(opt)
 Split an incoming stream on a given regex.
 regex: default newlines (/\r?\n/)
 ###
-class Splitter extends Transform
+class Split extends Transform
   constructor: (@regex=/\r?\n/) ->
     super objectMode: true
 
@@ -87,26 +63,7 @@ class Splitter extends Transform
     @push @_buffer, 'utf8' if @_buffer
     done()
 
-exports.splitter = (regex) -> new Splitter(regex)
-
-###
-Map a given stream (in objectMode) through a provided function f: (in) -> out .
-Drops any null or undefined return values from f.
-###
-class Map extends Transform
-  constructor: (@f, opt={}) ->
-    opt.objectMode = true
-    super opt
-
-  _transform: (i, encoding, done) ->
-    try
-      out = @f i
-      @push out if out?
-      done()
-    catch e
-      @emit 'error', e
-
-exports.map = (f) -> new Map(f)
+exports.split = (regex) -> new Split(regex)
 
 ###*
 Just do a function to a stream, don't modify anything.
@@ -114,66 +71,98 @@ Just do a function to a stream, don't modify anything.
 exports.doto = (f) -> new Map (x) -> f(x); x
 
 ###
+Map a given stream (in objectMode) through a provided function f: (in) -> out .
+Drops any null or undefined return values from f.
+###
+class Map extends Transform
+  constructor: (@f) ->
+    super {objectMode: true}
+
+  _transform: (i, encoding, done) ->
+    try
+      out = @f i
+      @push out if out?
+    catch e
+      @emit 'exception', e
+    finally
+      done()
+
+exports.map = (f) -> new Map(f)
+
+###
 Map a given stream (in objectMode) through a provided async function
 f: (in, callback), where callback: (err, out)
 Drops any null or undefined `out` values.
 
 Additional opt values:
-concurrency: number of concurrent asynchronous calls allowed.
+concurrency: number of concurrent asynchronous calls allowed.  Default unlimited.
 ###
-
-class AsyncMap extends Transform
+class AsyncMap extends Duplex
   constructor: (opt, f) ->
+    super allowHalfOpen: true, objectMode: true
     if typeof opt is 'function'
       f = opt
       opt = {}
     @f = f
-    opt.objectMode = true
-    super opt
-    @concurrency = opt.concurrency
+    @concurrency = opt.concurrency || 1 # Max num calls outstanding
+    @count = 0 # How many calls are currently outstanding
+    @dones = [] # Pending callbacks
+    @results = []
+    @readerReady = false # Can we push results?
 
-  _transform: (i, encoding, done) ->
-    # TODO: Handle concurrency
-    @f i, (err, out) =>
+    @finished = false # Is writer done?
+    @on 'finish', =>
+      @finished = true
+
+  _pump: ->
+    while @results.length
+      @readerReady = @push @results.shift()
+      return unless @readerReady
+
+  _read: (size) ->
+    @readerReady = true
+    if @results.length
+      @_pump()
+    else
+      if @finished and @count == 0
+        @push null
+
+  _done: ->
+    done = @dones.shift()
+    done?()
+
+  _write: (x, encoding, done) ->
+    @dones.push done
+    @count++
+    @f x, (err, out) =>
+      @count--
       if err
-        @emit 'error', err
+        @emit 'exception', err
       else
-        @push out if out?
-        done()
+        @results.push out if out?
+        @_pump() if @readerReady
+      # If we have some callbacks queued, call them.
+      @_done()
+    # If we can do more simultaneously, signal we are ready.
+    if @concurrency > @count
+      @_done()
 
-exports.mapAsync = (f, opt) -> new AsyncMap(f, opt)
+exports.mapAsync = (opt, f) -> new AsyncMap(opt, f)
 
-class Filter extends Transform
-  constructor: (@f, opt={}) ->
-    opt.objectMode = true
-    super opt
+exports.filter = (f) -> new Map (x) -> x if f x
 
-  _transform: (i, encoding, done) ->
-    try
-      keep = @f i
-      @push i if keep
-      done()
-    catch e
-      @emit 'error', e
+exports.filterAsync = (opt, f) ->
+  if typeof opt is 'function'
+    f = opt
+    opt = {}
 
-exports.filter = (f) -> new Filter(f)
+  g = (x, callback) ->
+    f x, (err, out) ->
+      x = if out then x else null
+      callback err, x
 
-class AsyncFilter extends Transform
-  constructor: (@f, opt={}) ->
-    opt.objectMode = true
-    super opt
-    @concurrency = opt.concurrency
+  return new AsyncMap opt, g
 
-  _transform: (i, encoding, done) ->
-    # TODO: Handle concurrency
-    @f i, (err, keep) =>
-      if err
-        @emit 'error', err
-      else
-        @push i if keep
-        done()
-
-exports.filterAsync = (f, opt) -> new AsyncFilter(f, opt)
 
 ###*
 Collects input, emitting an array of output after opt.delay ms of quiescence.
@@ -224,8 +213,6 @@ class Merge extends Readable
         # If there are no more streams, we are done.
         if @streams.length == 0
           @push null
-      s.on 'error', (err) =>
-        @emit 'error', err
       s.on 'readable', =>
         @_pump()
 
@@ -266,8 +253,6 @@ class Zip extends Readable
       s.on 'end', =>
         # When any stream is done, this stream is done
         @push null
-      s.on 'error', (err) =>
-        @emit 'error', err
       s.on 'readable', =>
         @_pump()
 
@@ -298,3 +283,108 @@ class Zip extends Readable
     @_pump()
 
 exports.zip = (streamMap) -> new Zip(streamMap)
+
+
+
+###
+The above methods work for vanilla Node streams.
+However, we'd like a type of stream (PvcStream) that:
+1. propagates errors downstream, so that we can handle errors at the end.
+2. has the `map`/etc methods built in, for nicer chaining.
+
+Eg, we'd like to be able to do something like this:
+```
+source.map(f)
+  .mapAsync(g)
+  .filter(h)
+  .errors (error) ->
+  .on 'data', (data) ->
+```
+
+We can do this by changing the `pipe` method to:
+1. listen to errors of the piping stream, and emit them from the piped stream,
+2. converting the piped stream to a PvcStream, if it's a Readable,
+3. and returning the piped stream, to allow chaining.
+###
+
+
+class PvcReadable extends Readable
+  constructor: ->
+    super objectMode: true
+    @currentOut = this
+
+  pipe: (writable) ->
+    oldOut = @currentOut
+    @currentOut = new StreamSource(writable)
+    oldOut.on 'exception', (error) =>
+      @currentOut.emit 'exception', error
+    super writable
+    return @currentOut
+
+  exceptions: (callback) ->
+    @on 'exception', callback
+
+# Now add all the methods from above
+Object.getOwnPropertyNames(exports).forEach (key) ->
+  PvcReadable.prototype[key] = (f) -> @pipe exports[key] f
+
+###
+Convert an array into a Readable stream.
+
+source = new ArraySource([1, 2])
+source.read() # 1
+source.read() # 2
+source.read() # null
+###
+class ArraySource extends PvcReadable
+  constructor: (@array) ->
+    super
+    @index = 0
+
+  _read: ->
+    if @index >= @array.length
+      @push null
+      @array = null
+    else
+      @push @array[@index]
+      @index++
+
+exports.arraySource = (arr) -> new ArraySource arr
+
+
+class StreamSource extends PvcReadable
+  constructor: (@source) ->
+    super
+
+    @source.on 'exception', (ex) =>
+      @emit 'exception', ex
+    # When the source is done, this stream is done
+    @source.on 'end', =>
+      @push null
+
+    # When the source is ready, see if we can start pushing
+    @source.on 'readable', =>
+      @_pump()
+
+  _pump: ->
+    # while there is stuff to read...
+    while chunk = @source.read()
+      # ...push it as long as downstream can handle it
+      break unless @push chunk
+
+  _read: (size) ->
+    @_pump()
+
+exports.streamSource = (source) -> new StreamSource source
+
+exports.source = (source) ->
+  # Take in an optional source
+  unless source?
+    return new PassSource
+  if source instanceof PvcReadable
+    return source
+  if source instanceof Readable
+    return new StreamSource(source)
+  # FIXME Get a real check for arrays here
+  if source instanceof Array
+    return new ArraySource(source)

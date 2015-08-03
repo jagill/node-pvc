@@ -29,7 +29,7 @@
     it('should throw an error for a non array', function(done) {
       var s;
       s = pvc.separate();
-      s.on('error', function(err) {
+      s.on('exception', function(err) {
         return done();
       });
       s.write(1);
@@ -40,7 +40,7 @@
       s = pvc.separate({
         lax: true
       });
-      s.on('error', function(err) {
+      s.on('exception', function(err) {
         return assert.fail('Should not throw an error');
       });
       s.write(1);
@@ -73,7 +73,7 @@
   describe('splitter', function() {
     it('should split on newlines', function() {
       var s;
-      s = pvc.splitter();
+      s = pvc.split();
       s.write('abc\ndef\n');
       assert.equal('abc', s.read());
       assert.equal('def', s.read());
@@ -81,7 +81,7 @@
     });
     it('should flush remainder', function() {
       var s;
-      s = pvc.splitter();
+      s = pvc.split();
       s.write('abc\ndef');
       s.end();
       assert.equal('abc', s.read());
@@ -90,7 +90,7 @@
     });
     it('should split on DOS newlines', function() {
       var s;
-      s = pvc.splitter();
+      s = pvc.split();
       s.write('abc\r\ndef\r\n');
       assert.equal('abc', s.read());
       assert.equal('def', s.read());
@@ -98,7 +98,7 @@
     });
     return it('should accept other regexes', function() {
       var s;
-      s = pvc.splitter(/\s+/);
+      s = pvc.split(/\s+/);
       s.write('ab cd\tef  gh\nij');
       s.end();
       assert.equal('ab', s.read());
@@ -141,12 +141,12 @@
       assert.equal(4, s.read());
       return assert.isNull(s.read());
     });
-    return it('should emit an error on map errors', function(done) {
+    return it('should emit an exception on map errors', function(done) {
       var s;
       s = pvc.map(function() {
         throw new Error();
       });
-      s.on('error', function() {
+      s.on('exception', function() {
         return done();
       });
       return s.write(1);
@@ -155,18 +155,19 @@
 
   describe('mapAsync', function() {
     it('should map inputs to outputs', function(done) {
-      var expectedResults, s;
+      var expectedResults, results, s;
       s = pvc.mapAsync(function(x, cb) {
-        return process.nextTick(function() {
+        return setTimeout(function() {
           return cb(null, 2 * x);
-        });
+        }, 10);
       });
       expectedResults = [2, 6];
-      s.on('readable', function() {
-        return assert.equal(expectedResults.shift(), s.read());
+      results = [];
+      s.on('data', function(x) {
+        return results.push(x);
       });
       s.on('finish', function() {
-        assert.equal(0, expectedResults.length);
+        assert.deepEqual(results, expectedResults);
         return done();
       });
       s.write(1);
@@ -174,7 +175,7 @@
       return s.end();
     });
     it('should drop nulls/undefineds', function(done) {
-      var expectedResults, s;
+      var expectedResults, results, s;
       s = pvc.mapAsync(function(x, cb) {
         return process.nextTick(function() {
           if (x === 2) {
@@ -187,11 +188,12 @@
         });
       });
       expectedResults = [1, 4];
-      s.on('readable', function() {
-        return assert.equal(expectedResults.shift(), s.read());
+      results = [];
+      s.on('data', function(x) {
+        return results.push(x);
       });
       s.on('finish', function() {
-        assert.equal(0, expectedResults.length);
+        assert.deepEqual(results, expectedResults);
         return done();
       });
       s.write(1);
@@ -200,15 +202,52 @@
       s.write(4);
       return s.end();
     });
-    return it('should emit an error on map errors', function(done) {
+    it('should emit an exception on map errors', function(done) {
       var s;
       s = pvc.mapAsync(function(x, cb) {
         return cb(new Error());
       });
-      s.on('error', function() {
+      s.on('exception', function() {
         return done();
       });
       return s.write(1);
+    });
+    return it('should respect concurrency option', function(done) {
+      var checkN, concurrency, i, j, n, reachedMax, ref, results, s, total;
+      total = 10;
+      concurrency = 4;
+      reachedMax = false;
+      n = 0;
+      checkN = function() {
+        if (concurrency === n) {
+          return reachedMax = true;
+        } else {
+          return assert.isAbove(concurrency, n);
+        }
+      };
+      s = pvc.mapAsync({
+        concurrency: concurrency
+      }, function(x, cb) {
+        n++;
+        checkN();
+        return setTimeout(function() {
+          n--;
+          return cb(null, x);
+        }, 100);
+      });
+      for (i = j = 0, ref = total; 0 <= ref ? j < ref : j > ref; i = 0 <= ref ? ++j : --j) {
+        s.write(i);
+      }
+      s.end();
+      results = [];
+      s.on('data', function(data) {
+        return results.push(data);
+      });
+      return s.on('end', function() {
+        assert.isTrue(reachedMax);
+        assert.equal(results.length, total);
+        return done();
+      });
     });
   });
 
@@ -225,12 +264,12 @@
       assert.equal(3, s.read());
       return assert.isNull(s.read());
     });
-    return it('should emit an error on filter errors', function(done) {
+    return it('should emit an exception on filter errors', function(done) {
       var s;
       s = pvc.filter(function() {
         throw new Error();
       });
-      s.on('error', function() {
+      s.on('exception', function() {
         return done();
       });
       return s.write(1);
@@ -258,14 +297,14 @@
       s.write(3);
       return s.end();
     });
-    return it('should emit an error on filter errors', function(done) {
+    return it('should emit an exception on filter errors', function(done) {
       var s;
       s = pvc.filterAsync(function(x, cb) {
         return process.nextTick(function() {
           return cb(new Error());
         });
       });
-      s.on('error', function() {
+      s.on('exception', function() {
         return done();
       });
       return s.write(1);
@@ -323,7 +362,7 @@
       return assert.isNull(s.read());
     });
     return it('should combine two streams', function() {
-      var c, i, in1, in2, len, output, ref, results, s, x;
+      var c, in1, in2, j, len, output, ref, results1, s, x;
       in1 = new pvc.arraySource(['a', 'b']);
       in2 = new pvc.arraySource(['c', 'd', 'e']);
       s = new pvc.merge([in1, in2]);
@@ -332,12 +371,12 @@
         output[x] = true;
       }
       ref = ['a', 'b', 'c', 'd', 'e'];
-      results = [];
-      for (i = 0, len = ref.length; i < len; i++) {
-        c = ref[i];
-        results.push(assert.isTrue(output[c]));
+      results1 = [];
+      for (j = 0, len = ref.length; j < len; j++) {
+        c = ref[j];
+        results1.push(assert.isTrue(output[c]));
       }
-      return results;
+      return results1;
     });
   });
 
