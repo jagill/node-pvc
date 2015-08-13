@@ -332,3 +332,22 @@ describe 'doto', ->
     assert.equal s.read(), a1
     assert.equal s.read(), a2
     assert.isNull s.read()
+
+describe 'limit', ->
+  it 'should limit the incoming stream', ->
+    s = new pvc.limit 2
+    s.write 1
+    s.write 2
+    s.write 3
+    assert.equal s.read(), 1
+    assert.equal s.read(), 2
+    assert.isNull s.read()
+
+describe 'skip', ->
+  it 'should skip the beginning of the incoming stream', ->
+    s = new pvc.skip 2
+    s.write 1
+    s.write 2
+    s.write 3
+    assert.equal s.read(), 3
+    assert.isNull s.read()

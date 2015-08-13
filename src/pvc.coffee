@@ -4,6 +4,34 @@ _path = require 'path'
 util = require 'util'
 
 
+
+class Limit extends Transform
+  constructor: (@n) ->
+    super objectMode: true
+
+  _transform: (x, encoding, done) ->
+    if @n > 0
+      @push x
+      @n--
+    else
+      @push null
+    done()
+
+exports.limit = (n) -> new Limit(n)
+
+class Skip extends Transform
+  constructor: (@n) ->
+    super objectMode: true
+
+  _transform: (x, encoding, done) ->
+    if @n > 0
+      @n--
+    else
+      @push x
+    done()
+
+exports.skip = (n) -> new Skip(n)
+
 ###
 Convert incoming arrays into their constituent elements.
 

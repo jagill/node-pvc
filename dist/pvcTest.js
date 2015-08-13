@@ -472,4 +472,29 @@
     });
   });
 
+  describe('limit', function() {
+    return it('should limit the incoming stream', function() {
+      var s;
+      s = new pvc.limit(2);
+      s.write(1);
+      s.write(2);
+      s.write(3);
+      assert.equal(s.read(), 1);
+      assert.equal(s.read(), 2);
+      return assert.isNull(s.read());
+    });
+  });
+
+  describe('skip', function() {
+    return it('should skip the beginning of the incoming stream', function() {
+      var s;
+      s = new pvc.skip(2);
+      s.write(1);
+      s.write(2);
+      s.write(3);
+      assert.equal(s.read(), 3);
+      return assert.isNull(s.read());
+    });
+  });
+
 }).call(this);

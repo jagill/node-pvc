@@ -1,5 +1,5 @@
 (function() {
-  var ArraySource, AsyncMap, Debounce, Duplex, Map, Merge, PvcReadable, Readable, Separate, Split, StreamSource, Transform, Zip, _path, fs, ref, util,
+  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PvcReadable, Readable, Separate, Skip, Split, StreamSource, Transform, Zip, _path, fs, ref, util,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
@@ -10,6 +10,61 @@
   ref = require('stream'), Transform = ref.Transform, Duplex = ref.Duplex, Readable = ref.Readable;
 
   util = require('util');
+
+  Limit = (function(superClass) {
+    extend(Limit, superClass);
+
+    function Limit(n1) {
+      this.n = n1;
+      Limit.__super__.constructor.call(this, {
+        objectMode: true
+      });
+    }
+
+    Limit.prototype._transform = function(x, encoding, done) {
+      if (this.n > 0) {
+        this.push(x);
+        this.n--;
+      } else {
+        this.push(null);
+      }
+      return done();
+    };
+
+    return Limit;
+
+  })(Transform);
+
+  exports.limit = function(n) {
+    return new Limit(n);
+  };
+
+  Skip = (function(superClass) {
+    extend(Skip, superClass);
+
+    function Skip(n1) {
+      this.n = n1;
+      Skip.__super__.constructor.call(this, {
+        objectMode: true
+      });
+    }
+
+    Skip.prototype._transform = function(x, encoding, done) {
+      if (this.n > 0) {
+        this.n--;
+      } else {
+        this.push(x);
+      }
+      return done();
+    };
+
+    return Skip;
+
+  })(Transform);
+
+  exports.skip = function(n) {
+    return new Skip(n);
+  };
 
 
   /*
