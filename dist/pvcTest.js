@@ -497,4 +497,47 @@
     });
   });
 
+  describe('reduce', function() {
+    it('should reduce a list', function(done) {
+      var s;
+      s = new pvc.source([1, 3, 4, 2]).reduce(function(x, y) {
+        return x + y;
+      });
+      s.on('data', function(d) {
+        return assert.equal(d, 10);
+      });
+      s.on('end', done);
+      return s.on('exception', function(e) {
+        return assert.fail("Should not have exception " + e);
+      });
+    });
+    return it('should take an initial value', function(done) {
+      var s;
+      s = new pvc.source([1, 3, 4, 2]).reduce(0, function(x, y) {
+        return x + 1;
+      });
+      s.on('data', function(d) {
+        return assert.equal(d, 4);
+      });
+      s.on('end', done);
+      return s.on('exception', function(e) {
+        return assert.fail("Should not have exception " + e);
+      });
+    });
+  });
+
+  describe('count', function() {
+    return it('count items in a stream', function(done) {
+      var s;
+      s = new pvc.source([1, 3, 4, 2]).count();
+      s.on('data', function(d) {
+        return assert.equal(d, 4);
+      });
+      s.on('end', done);
+      return s.on('exception', function(e) {
+        return assert.fail("Should not have exception " + e);
+      });
+    });
+  });
+
 }).call(this);

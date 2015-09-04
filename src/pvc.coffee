@@ -191,7 +191,40 @@ exports.filterAsync = (opt, f) ->
 
   return new AsyncMap opt, g
 
+class Reduce extends Transform
+  # Call with a reducing function (reduced, next) ->
+  # Call with an optional intial value.  If not supplied,
+  # use the first value as an initial value.  Supplying
+  # initialValue = null or undefined is the same as not
+  # supplying it.
+  constructor: (initialValue, f) ->
+    super {objectMode: true}
+    if 'function' == typeof initialValue
+      f = initialValue
+      initialValue = undefined
+    @reduced = initialValue
+    @f = f
 
+  _transform: (i, encoding, done) ->
+    unless @reduced?
+      @reduced = i
+      done()
+      return
+
+    try
+      @reduced = @f(@reduced, i)
+    catch e
+      @emit 'exception', e
+    finally
+      done()
+
+  _flush: (done) ->
+    @push @reduced
+    done()
+
+exports.reduce = (initialValue, f) -> new Reduce(initialValue, f)
+
+exports.count = -> new Reduce( 0, (x, y) -> x + 1 )
 ###*
 Collects input, emitting an array of output after opt.delay ms of quiescence.
 ###
@@ -354,7 +387,7 @@ class PvcReadable extends Readable
 
 # Now add all the methods from above
 Object.getOwnPropertyNames(exports).forEach (key) ->
-  PvcReadable.prototype[key] = (f) -> @pipe exports[key] f
+  PvcReadable.prototype[key] = -> @pipe(exports[key].apply this, arguments)
 
 ###
 Convert an array into a Readable stream.

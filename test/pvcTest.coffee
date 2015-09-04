@@ -351,3 +351,31 @@ describe 'skip', ->
     s.write 3
     assert.equal s.read(), 3
     assert.isNull s.read()
+
+describe 'reduce', ->
+  it 'should reduce a list', (done) ->
+    s = new pvc.source([1, 3, 4, 2])
+      .reduce (x, y) -> x + y
+    s.on 'data', (d) ->
+      assert.equal d, 10
+    s.on 'end', done
+    s.on 'exception', (e) ->
+      assert.fail "Should not have exception #{e}"
+  it 'should take an initial value', (done) ->
+    s = new pvc.source([1, 3, 4, 2])
+      .reduce 0, (x, y) -> x + 1
+    s.on 'data', (d) ->
+      assert.equal d, 4
+    s.on 'end', done
+    s.on 'exception', (e) ->
+      assert.fail "Should not have exception #{e}"
+
+describe 'count', ->
+  it 'count items in a stream', (done) ->
+    s = new pvc.source([1, 3, 4, 2])
+      .count()
+    s.on 'data', (d) ->
+      assert.equal d, 4
+    s.on 'end', done
+    s.on 'exception', (e) ->
+      assert.fail "Should not have exception #{e}"

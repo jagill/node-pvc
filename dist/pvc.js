@@ -1,5 +1,5 @@
 (function() {
-  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PvcReadable, Readable, Separate, Skip, Split, StreamSource, Transform, Zip, _path, fs, ref, util,
+  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PvcReadable, Readable, Reduce, Separate, Skip, Split, StreamSource, Transform, Zip, _path, fs, ref, util,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
@@ -338,6 +338,57 @@
     return new AsyncMap(opt, g);
   };
 
+  Reduce = (function(superClass) {
+    extend(Reduce, superClass);
+
+    function Reduce(initialValue, f) {
+      Reduce.__super__.constructor.call(this, {
+        objectMode: true
+      });
+      if ('function' === typeof initialValue) {
+        f = initialValue;
+        initialValue = void 0;
+      }
+      this.reduced = initialValue;
+      this.f = f;
+    }
+
+    Reduce.prototype._transform = function(i, encoding, done) {
+      var e;
+      if (this.reduced == null) {
+        this.reduced = i;
+        done();
+        return;
+      }
+      try {
+        return this.reduced = this.f(this.reduced, i);
+      } catch (_error) {
+        e = _error;
+        return this.emit('exception', e);
+      } finally {
+        done();
+      }
+    };
+
+    Reduce.prototype._flush = function(done) {
+      this.push(this.reduced);
+      return done();
+    };
+
+    return Reduce;
+
+  })(Transform);
+
+  exports.reduce = function(initialValue, f) {
+    return new Reduce(initialValue, f);
+  };
+
+  exports.count = function() {
+    return new Reduce(0, function(x, y) {
+      return x + 1;
+    });
+  };
+
 
   /**
   Collects input, emitting an array of output after opt.delay ms of quiescence.
@@ -593,8 +644,8 @@
   })(Readable);
 
   Object.getOwnPropertyNames(exports).forEach(function(key) {
-    return PvcReadable.prototype[key] = function(f) {
-      return this.pipe(exports[key](f));
+    return PvcReadable.prototype[key] = function() {
+      return this.pipe(exports[key].apply(this, arguments));
     };
   });
 
