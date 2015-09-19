@@ -99,6 +99,27 @@ s.read() // '1'
 s.read() // null
 ```
 
+### limit
+Limits the stream to the first `n` entries.
+
+```js
+s = pvc.source( ['a', 'b', 'c', 'd', 'e'] ).limit(2)
+s.read() // 'a'
+s.read() // 'b'
+s.read() // null
+```
+
+### skip
+Skips the first `n` entries.
+
+```js
+s = pvc.source( ['a', 'b', 'c', 'd', 'e'] ).skip(2)
+s.read() // 'c'
+s.read() // 'd'
+s.read() // 'e'
+s.read() // null
+```
+
 ### separate
 Separate incoming arrays, so that they are flattened on the output.
 Takes two options, lax and recursive.  If `recursive == false` (default),

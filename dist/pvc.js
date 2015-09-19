@@ -1,447 +1,74 @@
 (function() {
-  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PvcReadable, Readable, Reduce, Separate, Skip, Split, StreamSource, Transform, Zip, _path, fs, ref, util,
+  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PassThrough, PvcPassThrough, PvcTransform, Readable, Reduce, Separate, Sink, Skip, Split, ToArray, Transform, Writable, Zip, fs, mixin, pipe, ref, registers, util,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
   fs = require('fs');
 
-  _path = require('path');
-
-  ref = require('stream'), Transform = ref.Transform, Duplex = ref.Duplex, Readable = ref.Readable;
+  ref = require('stream'), Transform = ref.Transform, Duplex = ref.Duplex, Readable = ref.Readable, Writable = ref.Writable, PassThrough = ref.PassThrough;
 
   util = require('util');
 
-  Limit = (function(superClass) {
-    extend(Limit, superClass);
+  pipe = function(last, next) {
+    last.on('exception', function(ex) {
+      return next.emit('exception', ex);
+    });
+    return last.pipe(next);
+  };
 
-    function Limit(n1) {
-      this.n = n1;
-      Limit.__super__.constructor.call(this, {
+  registers = {};
+
+  exports.mixin = mixin = function(obj) {
+    var k, results, v;
+    results = [];
+    for (k in registers) {
+      v = registers[k];
+      results.push(obj.prototype[k] = v);
+    }
+    return results;
+  };
+
+
+  /*
+   * Sources
+  
+  Sources are various ways to start pipes.
+   */
+
+
+  /*
+  Convert an array into a Readable stream.
+  
+  source = new ArraySource([1, 2])
+  source.read() # 1
+  source.read() # 2
+  source.read() # null
+   */
+
+  ArraySource = (function(superClass) {
+    extend(ArraySource, superClass);
+
+    function ArraySource(array) {
+      this.array = array;
+      ArraySource.__super__.constructor.call(this, {
         objectMode: true
       });
+      this.index = 0;
     }
 
-    Limit.prototype._transform = function(x, encoding, done) {
-      if (this.n > 0) {
-        this.push(x);
-        this.n--;
-      } else {
+    ArraySource.prototype._read = function() {
+      if (this.index >= this.array.length) {
         this.push(null);
-      }
-      return done();
-    };
-
-    return Limit;
-
-  })(Transform);
-
-  exports.limit = function(n) {
-    return new Limit(n);
-  };
-
-  Skip = (function(superClass) {
-    extend(Skip, superClass);
-
-    function Skip(n1) {
-      this.n = n1;
-      Skip.__super__.constructor.call(this, {
-        objectMode: true
-      });
-    }
-
-    Skip.prototype._transform = function(x, encoding, done) {
-      if (this.n > 0) {
-        this.n--;
+        return this.array = null;
       } else {
-        this.push(x);
-      }
-      return done();
-    };
-
-    return Skip;
-
-  })(Transform);
-
-  exports.skip = function(n) {
-    return new Skip(n);
-  };
-
-
-  /*
-  Convert incoming arrays into their constituent elements.
-  
-  Additional opt fields:
-  lax: If true, just push non-Arrays.  Default is to throw an error.
-  recursive: If true, separate any arrays that were found from the separation
-    procedure.  Default is to only separate one level.
-   */
-
-  Separate = (function(superClass) {
-    extend(Separate, superClass);
-
-    function Separate(opt) {
-      if (opt == null) {
-        opt = {};
-      }
-      Separate.__super__.constructor.call(this, {
-        objectMode: true
-      });
-      this.lax = opt.lax;
-      this.recursive = opt.recursive;
-    }
-
-    Separate.prototype._pushArray = function(arr) {
-      return arr.forEach((function(_this) {
-        return function(x) {
-          if (_this.recursive && util.isArray(x)) {
-            return _this._pushArray(x);
-          } else {
-            return _this.push(x);
-          }
-        };
-      })(this));
-    };
-
-    Separate.prototype._transform = function(arr, encoding, done) {
-      if (!util.isArray(arr)) {
-        if (this.lax) {
-          this.push(arr);
-        } else {
-          this.emit('exception', "Found non-array value: " + arr);
-        }
-      } else {
-        this._pushArray(arr);
-      }
-      return done();
-    };
-
-    return Separate;
-
-  })(Transform);
-
-  exports.separate = function(opt) {
-    return new Separate(opt);
-  };
-
-
-  /*
-  Split an incoming stream on a given regex.
-  regex: default newlines (/\r?\n/)
-   */
-
-  Split = (function(superClass) {
-    extend(Split, superClass);
-
-    function Split(regex1) {
-      var StringDecoder;
-      this.regex = regex1 != null ? regex1 : /\r?\n/;
-      Split.__super__.constructor.call(this, {
-        objectMode: true
-      });
-      StringDecoder = require('string_decoder').StringDecoder;
-      this._decoder = new StringDecoder('utf8');
-      this._buffer = '';
-    }
-
-    Split.prototype._transform = function(chunk, encoding, done) {
-      var j, len, line, lines;
-      this._buffer += this._decoder.write(chunk);
-      lines = this._buffer.split(this.regex);
-      this._buffer = lines.pop();
-      for (j = 0, len = lines.length; j < len; j++) {
-        line = lines[j];
-        this.push(line, 'utf8');
-      }
-      return done();
-    };
-
-    Split.prototype._flush = function(done) {
-      if (this._buffer) {
-        this.push(this._buffer, 'utf8');
-      }
-      return done();
-    };
-
-    return Split;
-
-  })(Transform);
-
-  exports.split = function(regex) {
-    return new Split(regex);
-  };
-
-
-  /**
-  Just do a function to a stream, don't modify anything.
-   */
-
-  exports.doto = function(f) {
-    return new Map(function(x) {
-      f(x);
-      return x;
-    });
-  };
-
-
-  /*
-  Map a given stream (in objectMode) through a provided function f: (in) -> out .
-  Drops any null or undefined return values from f.
-   */
-
-  Map = (function(superClass) {
-    extend(Map, superClass);
-
-    function Map(f1) {
-      this.f = f1;
-      Map.__super__.constructor.call(this, {
-        objectMode: true
-      });
-    }
-
-    Map.prototype._transform = function(i, encoding, done) {
-      var e, out;
-      try {
-        out = this.f(i);
-        if (out != null) {
-          return this.push(out);
-        }
-      } catch (_error) {
-        e = _error;
-        return this.emit('exception', e);
-      } finally {
-        done();
+        this.push(this.array[this.index]);
+        return this.index++;
       }
     };
 
-    return Map;
+    return ArraySource;
 
-  })(Transform);
-
-  exports.map = function(f) {
-    return new Map(f);
-  };
-
-
-  /*
-  Map a given stream (in objectMode) through a provided async function
-  f: (in, callback), where callback: (err, out)
-  Drops any null or undefined `out` values.
-  
-  Additional opt values:
-  concurrency: number of concurrent asynchronous calls allowed.  Default unlimited.
-   */
-
-  AsyncMap = (function(superClass) {
-    extend(AsyncMap, superClass);
-
-    function AsyncMap(opt, f) {
-      AsyncMap.__super__.constructor.call(this, {
-        allowHalfOpen: true,
-        objectMode: true
-      });
-      if (typeof opt === 'function') {
-        f = opt;
-        opt = {};
-      }
-      this.f = f;
-      this.concurrency = opt.concurrency || 1;
-      this.count = 0;
-      this.dones = [];
-      this.results = [];
-      this.readerReady = false;
-      this.finished = false;
-      this.on('finish', (function(_this) {
-        return function() {
-          return _this.finished = true;
-        };
-      })(this));
-    }
-
-    AsyncMap.prototype._pump = function() {
-      while (this.results.length) {
-        this.readerReady = this.push(this.results.shift());
-        if (!this.readerReady) {
-          return;
-        }
-      }
-    };
-
-    AsyncMap.prototype._read = function(size) {
-      this.readerReady = true;
-      if (this.results.length) {
-        return this._pump();
-      } else {
-        if (this.finished && this.count === 0) {
-          return this.push(null);
-        }
-      }
-    };
-
-    AsyncMap.prototype._done = function() {
-      var done;
-      done = this.dones.shift();
-      return typeof done === "function" ? done() : void 0;
-    };
-
-    AsyncMap.prototype._write = function(x, encoding, done) {
-      this.dones.push(done);
-      this.count++;
-      this.f(x, (function(_this) {
-        return function(err, out) {
-          _this.count--;
-          if (err) {
-            _this.emit('exception', err);
-          } else {
-            if (out != null) {
-              _this.results.push(out);
-            }
-            if (_this.readerReady) {
-              _this._pump();
-            }
-          }
-          return _this._done();
-        };
-      })(this));
-      if (this.concurrency > this.count) {
-        return this._done();
-      }
-    };
-
-    return AsyncMap;
-
-  })(Duplex);
-
-  exports.mapAsync = function(opt, f) {
-    return new AsyncMap(opt, f);
-  };
-
-  exports.filter = function(f) {
-    return new Map(function(x) {
-      if (f(x)) {
-        return x;
-      }
-    });
-  };
-
-  exports.filterAsync = function(opt, f) {
-    var g;
-    if (typeof opt === 'function') {
-      f = opt;
-      opt = {};
-    }
-    g = function(x, callback) {
-      return f(x, function(err, out) {
-        x = out ? x : null;
-        return callback(err, x);
-      });
-    };
-    return new AsyncMap(opt, g);
-  };
-
-  Reduce = (function(superClass) {
-    extend(Reduce, superClass);
-
-    function Reduce(initialValue, f) {
-      Reduce.__super__.constructor.call(this, {
-        objectMode: true
-      });
-      if ('function' === typeof initialValue) {
-        f = initialValue;
-        initialValue = void 0;
-      }
-      this.reduced = initialValue;
-      this.f = f;
-    }
-
-    Reduce.prototype._transform = function(i, encoding, done) {
-      var e;
-      if (this.reduced == null) {
-        this.reduced = i;
-        done();
-        return;
-      }
-      try {
-        return this.reduced = this.f(this.reduced, i);
-      } catch (_error) {
-        e = _error;
-        return this.emit('exception', e);
-      } finally {
-        done();
-      }
-    };
-
-    Reduce.prototype._flush = function(done) {
-      this.push(this.reduced);
-      return done();
-    };
-
-    return Reduce;
-
-  })(Transform);
-
-  exports.reduce = function(initialValue, f) {
-    return new Reduce(initialValue, f);
-  };
-
-  exports.count = function() {
-    return new Reduce(0, function(x, y) {
-      return x + 1;
-    });
-  };
-
-
-  /**
-  Collects input, emitting an array of output after opt.delay ms of quiescence.
-   */
-
-  Debounce = (function(superClass) {
-    extend(Debounce, superClass);
-
-    function Debounce(opt) {
-      if (opt == null) {
-        opt = {};
-      }
-      if (!opt.delay) {
-        throw new Error('Must supply options.delay in milliseconds');
-      }
-      opt.objectMode = true;
-      Debounce.__super__.constructor.call(this, opt);
-      this._delay = opt.delay;
-      this._buffer = [];
-      this._timeout = null;
-    }
-
-    Debounce.prototype._setFlushTimeout = function() {
-      clearTimeout(this._timeout);
-      return this._timeout = setTimeout((function(_this) {
-        return function() {
-          _this.push(_this._buffer);
-          return _this._buffer = [];
-        };
-      })(this), this._delay);
-    };
-
-    Debounce.prototype._transform = function(x, encoding, done) {
-      this._buffer.push(x);
-      this._setFlushTimeout();
-      return done();
-    };
-
-    Debounce.prototype._flush = function(done) {
-      clearTimeout(this._timeout);
-      if (this._buffer.length) {
-        this.push(this._buffer);
-      }
-      return done();
-    };
-
-    return Debounce;
-
-  })(Transform);
-
-  exports.debounce = function(opt) {
-    return new Debounce(opt);
-  };
+  })(Readable);
 
 
   /**
@@ -590,163 +217,542 @@
     return new Zip(streamMap);
   };
 
-
-  /*
-  The above methods work for vanilla Node streams.
-  However, we'd like a type of stream (PvcStream) that:
-  1. propagates errors downstream, so that we can handle errors at the end.
-  2. has the `map`/etc methods built in, for nicer chaining.
-  
-  Eg, we'd like to be able to do something like this:
-  ```
-  source.map(f)
-    .mapAsync(g)
-    .filter(h)
-    .errors (error) ->
-    .on 'data', (data) ->
-  ```
-  
-  We can do this by changing the `pipe` method to:
-  1. listen to errors of the piping stream, and emit them from the piped stream,
-  2. converting the piped stream to a PvcStream, if it's a Readable,
-  3. and returning the piped stream, to allow chaining.
-   */
-
-  PvcReadable = (function(superClass) {
-    extend(PvcReadable, superClass);
-
-    function PvcReadable() {
-      PvcReadable.__super__.constructor.call(this, {
-        objectMode: true
-      });
-      this.currentOut = this;
-    }
-
-    PvcReadable.prototype.pipe = function(writable) {
-      var oldOut;
-      oldOut = this.currentOut;
-      this.currentOut = new StreamSource(writable);
-      oldOut.on('exception', (function(_this) {
-        return function(error) {
-          return _this.currentOut.emit('exception', error);
-        };
-      })(this));
-      PvcReadable.__super__.pipe.call(this, writable);
-      return this.currentOut;
-    };
-
-    PvcReadable.prototype.exceptions = function(callback) {
-      return this.on('exception', callback);
-    };
-
-    return PvcReadable;
-
-  })(Readable);
-
-  Object.getOwnPropertyNames(exports).forEach(function(key) {
-    return PvcReadable.prototype[key] = function() {
-      return this.pipe(exports[key].apply(this, arguments));
-    };
-  });
-
-
-  /*
-  Convert an array into a Readable stream.
-  
-  source = new ArraySource([1, 2])
-  source.read() # 1
-  source.read() # 2
-  source.read() # null
-   */
-
-  ArraySource = (function(superClass) {
-    extend(ArraySource, superClass);
-
-    function ArraySource(array) {
-      this.array = array;
-      ArraySource.__super__.constructor.apply(this, arguments);
-      this.index = 0;
-    }
-
-    ArraySource.prototype._read = function() {
-      if (this.index >= this.array.length) {
-        this.push(null);
-        return this.array = null;
-      } else {
-        this.push(this.array[this.index]);
-        return this.index++;
-      }
-    };
-
-    return ArraySource;
-
-  })(PvcReadable);
-
-  exports.arraySource = function(arr) {
-    return new ArraySource(arr);
-  };
-
-  StreamSource = (function(superClass) {
-    extend(StreamSource, superClass);
-
-    function StreamSource(source1) {
-      this.source = source1;
-      StreamSource.__super__.constructor.apply(this, arguments);
-      this.source.on('exception', (function(_this) {
-        return function(ex) {
-          return _this.emit('exception', ex);
-        };
-      })(this));
-      this.source.on('end', (function(_this) {
-        return function() {
-          return _this.push(null);
-        };
-      })(this));
-      this.source.on('readable', (function(_this) {
-        return function() {
-          return _this._pump();
-        };
-      })(this));
-    }
-
-    StreamSource.prototype._pump = function() {
-      var chunk, results;
-      results = [];
-      while (chunk = this.source.read()) {
-        if (!this.push(chunk)) {
-          break;
-        } else {
-          results.push(void 0);
-        }
-      }
-      return results;
-    };
-
-    StreamSource.prototype._read = function(size) {
-      return this._pump();
-    };
-
-    return StreamSource;
-
-  })(PvcReadable);
-
-  exports.streamSource = function(source) {
-    return new StreamSource(source);
-  };
-
   exports.source = function(source) {
     if (source == null) {
-      return new PassSource;
+      return new PvcPassThrough();
     }
-    if (source instanceof PvcReadable) {
-      return source;
-    }
-    if (source instanceof Readable) {
-      return new StreamSource(source);
-    }
-    if (source instanceof Array) {
+    if (Array.isArray(source)) {
       return new ArraySource(source);
     }
+    if (source instanceof Readable) {
+      mixin(source);
+      return source;
+    }
   };
+
+
+  /*
+   * Sinks
+  
+  These are various ways to collect the results of the pipe.
+  They are constructed with a done function, which is called
+  on end.  If the sink  has any results to return, the done
+  function will be called with the collected exceptions as the
+  first argument, and the collected results as the second.
+   */
+
+  Sink = (function(superClass) {
+    extend(Sink, superClass);
+
+    function Sink(done1) {
+      this.done = done1;
+      Sink.__super__.constructor.call(this, {
+        objectMode: true
+      });
+      this.result = null;
+      this.exceptions = [];
+      this.on('exception', (function(_this) {
+        return function(ex) {
+          return _this.exceptions.push(ex);
+        };
+      })(this));
+      this.on('finish', (function(_this) {
+        return function() {
+          var exs;
+          exs = _this.exceptions.length === 0 ? null : _this.exceptions;
+          return _this.done(exs, _this.result);
+        };
+      })(this));
+    }
+
+    return Sink;
+
+  })(Writable);
+
+  Reduce = (function(superClass) {
+    extend(Reduce, superClass);
+
+    function Reduce(initial, f, done) {
+      if (done == null) {
+        done = f;
+        f = initial;
+        initial = null;
+      }
+      Reduce.__super__.constructor.call(this, done);
+      this.result = initial;
+      this.f = f;
+    }
+
+    Reduce.prototype._write = function(x, encoding, done) {
+      if (this.result == null) {
+        this.result = x;
+      } else {
+        this.result = this.f(this.result, x);
+      }
+      return done();
+    };
+
+    return Reduce;
+
+  })(Sink);
+
+  registers.reduce = function(initial, f, done) {
+    return pipe(this, new Reduce(initial, f, done));
+  };
+
+  registers.count = function(done) {
+    return pipe(this, new Reduce(0, function(x, y) {
+      return x + 1;
+    }, done));
+  };
+
+  ToArray = (function(superClass) {
+    extend(ToArray, superClass);
+
+    function ToArray(done) {
+      ToArray.__super__.constructor.call(this, done);
+      this.result = [];
+    }
+
+    ToArray.prototype._write = function(x, encoding, done) {
+      this.result.push(x);
+      return done();
+    };
+
+    return ToArray;
+
+  })(Sink);
+
+  registers.toArray = function(done) {
+    return pipe(this, new ToArray(done));
+  };
+
+
+  /*
+   * Transforms
+  
+  Transforms are the workhorses, taking input
+  from a previous stream and giving transformed
+  data to the next stream.
+   */
+
+  PvcTransform = (function(superClass) {
+    extend(PvcTransform, superClass);
+
+    function PvcTransform() {
+      PvcTransform.__super__.constructor.call(this, {
+        objectMode: true
+      });
+    }
+
+    return PvcTransform;
+
+  })(Transform);
+
+  PvcPassThrough = (function(superClass) {
+    extend(PvcPassThrough, superClass);
+
+    function PvcPassThrough() {
+      return PvcPassThrough.__super__.constructor.apply(this, arguments);
+    }
+
+    PvcPassThrough.prototype._transform = function(x, encoding, done) {
+      this.push(x);
+      return done();
+    };
+
+    return PvcPassThrough;
+
+  })(PvcTransform);
+
+  Limit = (function(superClass) {
+    extend(Limit, superClass);
+
+    function Limit(n1) {
+      this.n = n1;
+      Limit.__super__.constructor.call(this);
+    }
+
+    Limit.prototype._transform = function(x, encoding, done) {
+      if (this.n > 0) {
+        this.push(x);
+        this.n--;
+      } else {
+        this.push(null);
+      }
+      return done();
+    };
+
+    return Limit;
+
+  })(PvcTransform);
+
+  registers.limit = function(n) {
+    return pipe(this, new Limit(n));
+  };
+
+  Skip = (function(superClass) {
+    extend(Skip, superClass);
+
+    function Skip(n1) {
+      this.n = n1;
+      Skip.__super__.constructor.call(this);
+    }
+
+    Skip.prototype._transform = function(x, encoding, done) {
+      if (this.n > 0) {
+        this.n--;
+      } else {
+        this.push(x);
+      }
+      return done();
+    };
+
+    return Skip;
+
+  })(PvcTransform);
+
+  registers.skip = function(n) {
+    return pipe(this, new Skip(n));
+  };
+
+
+  /*
+  Convert incoming arrays into their constituent elements.
+  
+  @param options (optional) A dictionary of parameters, including:
+    lax: If true, just push non-Arrays.  Default is to throw an error.
+    recursive: If true, separate any arrays that were found from the separation
+      procedure.  Default is to only separate one level.
+   */
+
+  Separate = (function(superClass) {
+    extend(Separate, superClass);
+
+    function Separate(options) {
+      if (options == null) {
+        options = {};
+      }
+      this.lax = options.lax;
+      this.recursive = options.recursive;
+      Separate.__super__.constructor.call(this);
+    }
+
+    Separate.prototype._pushArray = function(arr) {
+      return arr.forEach((function(_this) {
+        return function(x) {
+          if (_this.recursive && util.isArray(x)) {
+            return _this._pushArray(x);
+          } else {
+            return _this.push(x);
+          }
+        };
+      })(this));
+    };
+
+    Separate.prototype._transform = function(arr, encoding, done) {
+      if (!util.isArray(arr)) {
+        if (this.lax) {
+          this.push(arr);
+        } else {
+          this.emit('exception', "Found non-array value: " + arr);
+        }
+      } else {
+        this._pushArray(arr);
+      }
+      return done();
+    };
+
+    return Separate;
+
+  })(PvcTransform);
+
+  registers.separate = function(options) {
+    return pipe(this, new Separate(options));
+  };
+
+
+  /*
+  Split an incoming stream on a given regex.
+  regex: default newlines (/\r?\n/)
+   */
+
+  Split = (function(superClass) {
+    extend(Split, superClass);
+
+    function Split(regex1) {
+      var StringDecoder;
+      this.regex = regex1 != null ? regex1 : /\r?\n/;
+      StringDecoder = require('string_decoder').StringDecoder;
+      this._decoder = new StringDecoder('utf8');
+      this._buffer = '';
+      Split.__super__.constructor.call(this);
+    }
+
+    Split.prototype._transform = function(chunk, encoding, done) {
+      var j, len, line, lines;
+      this._buffer += this._decoder.write(chunk);
+      lines = this._buffer.split(this.regex);
+      this._buffer = lines.pop();
+      for (j = 0, len = lines.length; j < len; j++) {
+        line = lines[j];
+        this.push(line, 'utf8');
+      }
+      return done();
+    };
+
+    Split.prototype._flush = function(done) {
+      if (this._buffer) {
+        this.push(this._buffer, 'utf8');
+      }
+      return done();
+    };
+
+    return Split;
+
+  })(PvcTransform);
+
+  registers.split = function(regex) {
+    return pipe(this, new Split(regex));
+  };
+
+
+  /*
+  Map a given stream (in objectMode) through a provided function f: (in) -> out .
+  Drops any null or undefined return values from f.
+   */
+
+  Map = (function(superClass) {
+    extend(Map, superClass);
+
+    function Map(f1) {
+      this.f = f1;
+      Map.__super__.constructor.call(this);
+    }
+
+    Map.prototype._transform = function(i, encoding, done) {
+      var e, out;
+      try {
+        out = this.f(i);
+        if (out != null) {
+          return this.push(out);
+        }
+      } catch (_error) {
+        e = _error;
+        return this.emit('exception', e);
+      } finally {
+        done();
+      }
+    };
+
+    return Map;
+
+  })(PvcTransform);
+
+  registers.map = function(f) {
+    return pipe(this, new Map(f));
+  };
+
+  registers.filter = function(f) {
+    return pipe(this, new Map(function(x) {
+      if (f(x)) {
+        return x;
+      }
+    }));
+  };
+
+  registers.doto = function(f) {
+    return pipe(this, new Map(function(x) {
+      f(x);
+      return x;
+    }));
+  };
+
+
+  /*
+  Map a given stream (in objectMode) through a provided async function
+  f: (in, callback), where callback: (err, out)
+  Drops any null or undefined `out` values.
+  
+  Additional opt values:
+  concurrency: number of concurrent asynchronous calls allowed.  Default unlimited.
+   */
+
+  AsyncMap = (function(superClass) {
+    extend(AsyncMap, superClass);
+
+    function AsyncMap(opt, f) {
+      AsyncMap.__super__.constructor.call(this, {
+        allowHalfOpen: true,
+        objectMode: true
+      });
+      if (typeof opt === 'function') {
+        f = opt;
+        opt = {};
+      }
+      this.f = f;
+      this.concurrency = opt.concurrency || 1;
+      this.count = 0;
+      this.dones = [];
+      this.results = [];
+      this.readerReady = false;
+      this.finished = false;
+      this.on('finish', (function(_this) {
+        return function() {
+          _this.finished = true;
+          return _this._maybeFinish();
+        };
+      })(this));
+    }
+
+    AsyncMap.prototype._maybeFinish = function() {
+      if (this.finished && this.count === 0) {
+        return this.push(null);
+      }
+    };
+
+    AsyncMap.prototype._pump = function() {
+      var x;
+      while (this.results.length) {
+        x = this.results.shift();
+        this.readerReady = this.push(x);
+        if (!this.readerReady) {
+          return;
+        }
+      }
+    };
+
+    AsyncMap.prototype._read = function(size) {
+      this.readerReady = true;
+      if (this.results.length) {
+        return this._pump();
+      } else {
+        return this._maybeFinish();
+      }
+    };
+
+    AsyncMap.prototype._done = function() {
+      var done;
+      done = this.dones.shift();
+      return typeof done === "function" ? done() : void 0;
+    };
+
+    AsyncMap.prototype._write = function(x, encoding, done) {
+      this.dones.push(done);
+      this.count++;
+      this.f(x, (function(_this) {
+        return function(err, out) {
+          _this.count--;
+          if (err) {
+            _this.emit('exception', err);
+          } else {
+            if (out != null) {
+              _this.results.push(out);
+            }
+            if (_this.readerReady) {
+              _this._pump();
+            }
+          }
+          return _this._done();
+        };
+      })(this));
+      if (this.concurrency > this.count) {
+        return this._done();
+      }
+    };
+
+    return AsyncMap;
+
+  })(Duplex);
+
+  registers.mapAsync = function(opt, f) {
+    return pipe(this, new AsyncMap(opt, f));
+  };
+
+  registers.filterAsync = function(opt, f) {
+    var g;
+    if (typeof opt === 'function') {
+      f = opt;
+      opt = {};
+    }
+    g = function(x, callback) {
+      return f(x, function(err, out) {
+        x = out ? x : null;
+        return callback(err, x);
+      });
+    };
+    return pipe(this, new AsyncMap(opt, g));
+  };
+
+
+  /**
+  Collects input, emitting an array of output after opt.delay ms of quiescence.
+   */
+
+  Debounce = (function(superClass) {
+    extend(Debounce, superClass);
+
+    function Debounce(opt) {
+      if (opt == null) {
+        opt = {};
+      }
+      if (!opt.delay) {
+        throw new Error('Must supply options.delay in milliseconds');
+      }
+      opt.objectMode = true;
+      Debounce.__super__.constructor.call(this, opt);
+      this._delay = opt.delay;
+      this._buffer = [];
+      this._timeout = null;
+    }
+
+    Debounce.prototype._setFlushTimeout = function() {
+      clearTimeout(this._timeout);
+      return this._timeout = setTimeout((function(_this) {
+        return function() {
+          _this.push(_this._buffer);
+          return _this._buffer = [];
+        };
+      })(this), this._delay);
+    };
+
+    Debounce.prototype._transform = function(x, encoding, done) {
+      this._buffer.push(x);
+      this._setFlushTimeout();
+      return done();
+    };
+
+    Debounce.prototype._flush = function(done) {
+      clearTimeout(this._timeout);
+      if (this._buffer.length) {
+        this.push(this._buffer);
+      }
+      return done();
+    };
+
+    return Debounce;
+
+  })(PvcTransform);
+
+  registers.debounce = function(opt) {
+    return pipe(this, new Debounce(opt));
+  };
+
+
+  /*
+   * Mixins
+  Now that we've registered everything, mixing the
+  appropriate pieces.
+   */
+
+  mixin(PvcTransform);
+
+  mixin(AsyncMap);
+
+  mixin(ArraySource);
+
+  mixin(Zip);
+
+  mixin(Merge);
 
 }).call(this);

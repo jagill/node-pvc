@@ -1,6 +1,6 @@
 {
   "name": "pvc",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Basic utilities for object streams.",
   "main": "dist/pvc.js",
   "directories": {

@@ -3,62 +3,57 @@ sinon = require 'sinon'
 
 pvc = require './pvc'
 
-
-describe 'arraySource', ->
-  it 'should pass array elements', ->
-    s = new pvc.arraySource([1, 2])
-    assert.equal 1, s.read()
-    assert.equal 2, s.read()
-    assert.isNull s.read()
-
 describe 'separate', ->
-  it 'should separate an array', ->
-    s = pvc.separate()
-    s.write [1, 2]
-    assert.equal 1, s.read()
-    assert.equal 2, s.read()
-    assert.isNull s.read()
+  it 'should separate an array', (done) ->
+    pvc.source([ [1, 2] ])
+      .separate()
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [1, 2]
+        done()
 
   it 'should throw an error for a non array', (done) ->
-    s = pvc.separate()
-    s.on 'exception', (err) -> done()
-    s.write 1
-    s.read()
+    pvc.source([1])
+      .separate()
+      .toArray (exs, arr) ->
+        assert.equal exs.length, 1
+        assert.equal arr.length, 0
+        done()
 
-  it 'should pass a non-array if lax=true', ->
-    s = pvc.separate( lax: true )
-    s.on 'exception', (err) -> assert.fail('Should not throw an error')
-    s.write 1
-    assert.equal 1, s.read()
-    assert.isNull s.read()
+  it 'should pass a non-array if lax=true', (done) ->
+    pvc.source([1])
+      .separate( lax: true )
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [1]
+        done()
 
-  it 'should pass child arrays unseparated', ->
-    s = pvc.separate()
-    s.write [1, ['a', 'b'], 2]
-    assert.equal 1, s.read()
-    assert.deepEqual ['a', 'b'], s.read()
-    assert.equal 2, s.read()
-    assert.isNull s.read()
+  it 'should pass child arrays unseparated', (done) ->
+    pvc.source([ [1, ['a', 'b'], 2] ])
+      .separate( lax: true )
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [1, ['a', 'b'], 2]
+        done()
 
-  it 'should separate child arrays if recursive=true', ->
-    s = pvc.separate( recursive: true )
-    s.write [1, ['a', 'b'], 2]
-    assert.equal 1, s.read()
-    assert.equal 'a', s.read()
-    assert.equal 'b', s.read()
-    assert.equal 2, s.read()
-    assert.isNull s.read()
+  it 'should separate child arrays if recursive=true', (done) ->
+    pvc.source([ [1, ['a', 'b'], 2] ])
+      .separate( recursive: true )
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [1, 'a', 'b', 2]
+        done()
 
-describe 'splitter', ->
+describe 'split', ->
   it 'should split on newlines', ->
-    s = pvc.split()
+    s = pvc.source().split()
     s.write('abc\ndef\n')
     assert.equal 'abc', s.read()
     assert.equal 'def', s.read()
     assert.isNull s.read()
 
   it 'should flush remainder', ->
-    s = pvc.split()
+    s = pvc.source().split()
     s.write('abc\ndef')
     s.end()
     assert.equal 'abc', s.read()
@@ -66,14 +61,14 @@ describe 'splitter', ->
     assert.isNull s.read()
 
   it 'should split on DOS newlines', ->
-    s = pvc.split()
+    s = pvc.source().split()
     s.write('abc\r\ndef\r\n')
     assert.equal 'abc', s.read()
     assert.equal 'def', s.read()
     assert.isNull s.read()
 
   it 'should accept other regexes', ->
-    s = pvc.split(/\s+/)
+    s = pvc.source().split(/\s+/)
     s.write('ab cd\tef  gh\nij')
     s.end()
     assert.equal 'ab', s.read()
@@ -84,40 +79,39 @@ describe 'splitter', ->
     assert.isNull s.read()
 
 describe 'map', ->
-  it 'should map inputs to outputs', ->
-    s = pvc.map( (x) -> 2*x )
-    s.write 1
-    s.write 3
-    assert.equal 2, s.read()
-    assert.equal 6, s.read()
-    assert.isNull s.read()
+  it 'should map inputs to outputs', (done) ->
+    pvc.source([1, 3])
+      .map( (x) -> 2*x )
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [2, 6]
+        done()
 
-  it 'should drop nulls/undefineds', ->
-    s = pvc.map (x) ->
-      return undefined if x == 2
-      return null if x == 3
-      return x
-    s.write 1
-    s.write 2
-    s.write 3
-    s.write 4
-    assert.equal 1, s.read()
-    assert.equal 4, s.read()
-    assert.isNull s.read()
+  it 'should drop nulls/undefineds', (done) ->
+    pvc.source([1, 2, 3, 4])
+      .map (x) ->
+        return undefined if x == 2
+        return null if x == 3
+        return x
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [1, 4]
+        done()
 
   it 'should emit an exception on map errors', (done) ->
-    s = pvc.map( -> throw new Error() )
-    s.on 'exception', -> done()
-    s.write 1
+    pvc.source([1, 2])
+      .map -> throw new Error()
+      .toArray (exs, arr) ->
+        assert.equal exs.length, 2
+        assert.equal arr.length, 0
+        done()
 
 describe 'mapAsync', ->
   it 'should map inputs to outputs', (done) ->
-    s = pvc.mapAsync( (x, cb) ->
-      setTimeout ->
-        cb null, 2*x
-      , 10
-    )
-    expectedResults = [2, 6]
+    s = pvc.source().mapAsync (x, cb) ->
+      process.nextTick ->
+        cb null, x*2
+    expectedResults = [2, 4, 6, 8]
     results = []
     s.on 'data', (x) ->
       results.push x
@@ -125,11 +119,23 @@ describe 'mapAsync', ->
       assert.deepEqual results, expectedResults
       done()
     s.write 1
+    s.write 2
     s.write 3
+    s.write 4
     s.end()
 
+  it 'should feed toArray correctly', (done) ->
+    pvc.source([1, 3])
+      .mapAsync( (x, cb) ->
+        process.nextTick ->
+          cb null, 2*x
+      ).toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [2, 6]
+        done()
+
   it 'should drop nulls/undefineds', (done) ->
-    s = pvc.mapAsync (x, cb) ->
+    s = pvc.source().mapAsync (x, cb) ->
       process.nextTick ->
         if x == 2
           cb null, undefined
@@ -151,7 +157,7 @@ describe 'mapAsync', ->
     s.end()
 
   it 'should emit an exception on map errors', (done) ->
-    s = pvc.mapAsync( (x, cb) -> cb new Error() )
+    s = pvc.source().mapAsync( (x, cb) -> cb new Error() )
     s.on 'exception', -> done()
     s.write 1
 
@@ -167,7 +173,7 @@ describe 'mapAsync', ->
       else
         assert.isAbove concurrency, n
 
-    s = pvc.mapAsync {concurrency}, (x, cb) ->
+    s = pvc.source().mapAsync {concurrency}, (x, cb) ->
       n++
       checkN()
       setTimeout ->
@@ -195,23 +201,25 @@ describe 'mapAsync', ->
 
 
 describe 'filter', ->
-  it 'should filter values', ->
-    s = pvc.filter (x) -> x % 2
-    s.write 1
-    s.write 2
-    s.write 3
-    assert.equal 1, s.read()
-    assert.equal 3, s.read()
-    assert.isNull s.read()
+  it 'should filter values', (done) ->
+    pvc.source( [1, 2, 3] )
+      .filter (x) -> x % 2
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [1, 3]
+        done()
 
   it 'should emit an exception on filter errors', (done) ->
-    s = pvc.filter( -> throw new Error() )
-    s.on 'exception', -> done()
-    s.write 1
+    pvc.source( [1, 2, 3] )
+      .filter( -> throw new Error() )
+      .toArray (exs, arr) ->
+        assert.equal exs.length, 3
+        assert.equal arr.length, 0
+        done()
 
 describe 'filterAsync', ->
   it 'should filter values', (done) ->
-    s = pvc.filterAsync (x, cb) ->
+    s = pvc.source().filterAsync (x, cb) ->
       process.nextTick ->
         cb null, x % 2
     expectedResults = [1, 3]
@@ -227,7 +235,7 @@ describe 'filterAsync', ->
 
 
   it 'should emit an exception on filter errors', (done) ->
-    s = pvc.filterAsync (x, cb) ->
+    s = pvc.source().filterAsync (x, cb) ->
       process.nextTick ->
         cb new Error()
     s.on 'exception', -> done()
@@ -242,7 +250,8 @@ describe 'debounce', ->
     clock.restore()
 
   it 'should not flush before timeout', ->
-    s = pvc.debounce delay: 200
+    s = pvc.source()
+      .debounce delay: 200
     s.write 1
     s.write 2
     assert.isNull s.read()
@@ -250,30 +259,31 @@ describe 'debounce', ->
     assert.isNull s.read()
 
   it 'should flush after timeout', ->
-    s = pvc.debounce delay: 200
+    s = pvc.source()
+      .debounce delay: 200
     s.write 1
     s.write 2
-    clock.tick 201
-    assert.deepEqual [1, 2], s.read()
+    clock.tick 300
+    assert.deepEqual s.read(), [1, 2]
 
   it 'should flush on end', ->
-    s = pvc.debounce delay: 200
+    s = pvc.source().debounce delay: 200
     s.write 1
     s.end()
-    assert.deepEqual [1], s.read()
+    assert.deepEqual s.read(), [1]
 
 describe 'merge', ->
   it 'should emit a single stream unchanged', ->
-    in1 = new pvc.arraySource([1, 2])
-    s = new pvc.merge [in1]
+    in1 = pvc.source [1, 2]
+    s = pvc.merge [in1]
     assert.equal s.read(), 1
     assert.equal s.read(), 2
     assert.isNull s.read()
 
   it 'should combine two streams', ->
-    in1 = new pvc.arraySource(['a', 'b'])
-    in2 = new pvc.arraySource(['c', 'd', 'e'])
-    s = new pvc.merge [in1, in2]
+    in1 = pvc.source ['a', 'b']
+    in2 = pvc.source ['c', 'd', 'e']
+    s = pvc.merge [in1, in2]
     output = {}
     while x = s.read()
       output[x] = true
@@ -283,39 +293,39 @@ describe 'merge', ->
 
 describe 'zip', ->
   it 'should zip a single stream', ->
-    in1 = new pvc.arraySource([1, 2])
-    s = new pvc.zip {num: in1}
+    in1 = pvc.source([1, 2])
+    s = pvc.zip {num: in1}
     assert.deepEqual s.read(), {num: 1}
     assert.deepEqual s.read(), {num: 2}
     assert.isNull s.read()
 
   it 'should zip two streams', ->
-    in1 = new pvc.arraySource([1, 2])
-    in2 = new pvc.arraySource(['a', 'b'])
+    in1 = pvc.source([1, 2])
+    in2 = pvc.source(['a', 'b'])
     s = new pvc.zip {num: in1, alph: in2}
     assert.deepEqual s.read(), {num: 1, alph: 'a'}
     assert.deepEqual s.read(), {num: 2, alph: 'b'}
     assert.isNull s.read()
 
   it 'should finish after the shortest input finishes', ->
-    in1 = new pvc.arraySource([1, 2, 3])
-    in2 = new pvc.arraySource(['a', 'b'])
-    s = new pvc.zip {num: in1, alph: in2}
+    in1 = pvc.source([1, 2, 3])
+    in2 = pvc.source(['a', 'b'])
+    s = pvc.zip {num: in1, alph: in2}
     assert.deepEqual s.read(), {num: 1, alph: 'a'}
     assert.deepEqual s.read(), {num: 2, alph: 'b'}
     assert.isNull s.read()
 
   it 'should finish immediately with an empty array', ->
-    in1 = new pvc.arraySource([1, 2])
-    in2 = new pvc.arraySource(['a', 'b'])
-    in3 = new pvc.arraySource([])
-    s = new pvc.zip {num: in1, alph: in2, empty: in3}
+    in1 = pvc.source([1, 2])
+    in2 = pvc.source(['a', 'b'])
+    in3 = pvc.source([])
+    s = pvc.zip {num: in1, alph: in2, empty: in3}
     assert.isNull s.read()
 
 describe 'doto', ->
   it 'should call the given function on the elements', ->
     total = 0
-    s = new pvc.doto (x) -> total += x
+    s = pvc.source().doto (x) -> total += x
     s.write 1
     s.read()
     assert.equal total, 1
@@ -324,9 +334,10 @@ describe 'doto', ->
     assert.equal total, 4
 
   it 'should pass through the elements unchanged', ->
-    s = new pvc.doto ->
     a1 = {}
     a2 = {}
+    s = pvc.source [a1, a2]
+      .doto (x) ->
     s.write a1
     s.write a2
     assert.equal s.read(), a1
@@ -334,48 +345,19 @@ describe 'doto', ->
     assert.isNull s.read()
 
 describe 'limit', ->
-  it 'should limit the incoming stream', ->
-    s = new pvc.limit 2
-    s.write 1
-    s.write 2
-    s.write 3
-    assert.equal s.read(), 1
-    assert.equal s.read(), 2
-    assert.isNull s.read()
+  it 'should limit the incoming stream', (done) ->
+    pvc.source [1, 2, 3]
+      .limit 2
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [1, 2]
+        done()
 
 describe 'skip', ->
-  it 'should skip the beginning of the incoming stream', ->
-    s = new pvc.skip 2
-    s.write 1
-    s.write 2
-    s.write 3
-    assert.equal s.read(), 3
-    assert.isNull s.read()
-
-describe 'reduce', ->
-  it 'should reduce a list', (done) ->
-    s = new pvc.source([1, 3, 4, 2])
-      .reduce (x, y) -> x + y
-    s.on 'data', (d) ->
-      assert.equal d, 10
-    s.on 'end', done
-    s.on 'exception', (e) ->
-      assert.fail "Should not have exception #{e}"
-  it 'should take an initial value', (done) ->
-    s = new pvc.source([1, 3, 4, 2])
-      .reduce 0, (x, y) -> x + 1
-    s.on 'data', (d) ->
-      assert.equal d, 4
-    s.on 'end', done
-    s.on 'exception', (e) ->
-      assert.fail "Should not have exception #{e}"
-
-describe 'count', ->
-  it 'count items in a stream', (done) ->
-    s = new pvc.source([1, 3, 4, 2])
-      .count()
-    s.on 'data', (d) ->
-      assert.equal d, 4
-    s.on 'end', done
-    s.on 'exception', (e) ->
-      assert.fail "Should not have exception #{e}"
+  it 'should skip the beginning of the incoming stream', (done) ->
+    pvc.source [1, 2, 3]
+      .skip 2
+      .toArray (exs, arr) ->
+        assert.isNull exs
+        assert.deepEqual arr, [3]
+        done()
