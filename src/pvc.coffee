@@ -12,9 +12,13 @@ pipe = (last, next) ->
 # Remember the things we need to add to the mixin, close to their definition.
 registers = {}
 # Now apply all that we've accumulated.
-exports.mixin = mixin = (obj) ->
+exports.mixin = mixin = (obj, useBase=false) ->
   for k, v of registers
-    obj.prototype[k] = v
+    if useBase
+      obj[k] = v
+    else
+      obj.prototype[k] = v
+  return
 
 ###
 # Sources
@@ -167,8 +171,7 @@ exports.source = (source) ->
   #   return source
   # If it's a readable, just do the mixin
   if source instanceof Readable
-    # FIXME: This should modify source, not source.prototype
-    mixin source
+    mixin source, true
     return source
 
 

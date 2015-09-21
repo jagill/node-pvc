@@ -1,13 +1,9 @@
 (function() {
-  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PassThrough, PvcPassThrough, PvcTransform, Readable, Reduce, Separate, Sink, Skip, Split, ToArray, Transform, Writable, Zip, fs, mixin, pipe, ref, registers, util,
+  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PassThrough, PvcPassThrough, PvcTransform, Readable, Reduce, Separate, Sink, Skip, Split, ToArray, Transform, Writable, Zip, mixin, pipe, ref, registers,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
-  fs = require('fs');
-
   ref = require('stream'), Transform = ref.Transform, Duplex = ref.Duplex, Readable = ref.Readable, Writable = ref.Writable, PassThrough = ref.PassThrough;
-
-  util = require('util');
 
   pipe = function(last, next) {
     last.on('exception', function(ex) {
@@ -18,14 +14,19 @@
 
   registers = {};
 
-  exports.mixin = mixin = function(obj) {
-    var k, results, v;
-    results = [];
+  exports.mixin = mixin = function(obj, useBase) {
+    var k, v;
+    if (useBase == null) {
+      useBase = false;
+    }
     for (k in registers) {
       v = registers[k];
-      results.push(obj.prototype[k] = v);
+      if (useBase) {
+        obj[k] = v;
+      } else {
+        obj.prototype[k] = v;
+      }
     }
-    return results;
   };
 
 
@@ -225,7 +226,7 @@
       return new ArraySource(source);
     }
     if (source instanceof Readable) {
-      mixin(source);
+      mixin(source, true);
       return source;
     }
   };
@@ -441,7 +442,7 @@
     Separate.prototype._pushArray = function(arr) {
       return arr.forEach((function(_this) {
         return function(x) {
-          if (_this.recursive && util.isArray(x)) {
+          if (_this.recursive && Array.isArray(x)) {
             return _this._pushArray(x);
           } else {
             return _this.push(x);
@@ -451,7 +452,7 @@
     };
 
     Separate.prototype._transform = function(arr, encoding, done) {
-      if (!util.isArray(arr)) {
+      if (!Array.isArray(arr)) {
         if (this.lax) {
           this.push(arr);
         } else {
@@ -571,11 +572,11 @@
 
   /*
   Map a given stream (in objectMode) through a provided async function
-  f: (in, callback), where callback: (err, out)
+  f: (in, callback), where callback: (err, out) ->
   Drops any null or undefined `out` values.
   
   Additional opt values:
-  concurrency: number of concurrent asynchronous calls allowed.  Default unlimited.
+  concurrency: number of concurrent asynchronous calls allowed.  Default in series.
    */
 
   AsyncMap = (function(superClass) {
@@ -741,7 +742,7 @@
 
   /*
    * Mixins
-  Now that we've registered everything, mixing the
+  Now that we've registered everything, mixin the
   appropriate pieces.
    */
 
