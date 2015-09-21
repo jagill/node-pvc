@@ -1,6 +1,4 @@
-fs = require 'fs'
 {Transform, Duplex, Readable, Writable, PassThrough} = require 'stream'
-util = require 'util'
 
 #######
 # Mixin
@@ -169,6 +167,7 @@ exports.source = (source) ->
   #   return source
   # If it's a readable, just do the mixin
   if source instanceof Readable
+    # FIXME: This should modify source, not source.prototype
     mixin source
     return source
 
@@ -301,13 +300,13 @@ class Separate extends PvcTransform
 
   _pushArray: (arr) ->
     arr.forEach (x) =>
-      if @recursive and util.isArray(x)
+      if @recursive and Array.isArray(x)
         @_pushArray x
       else
         @push x
 
   _transform: (arr, encoding, done) ->
-    if !util.isArray(arr)
+    if !Array.isArray(arr)
       if @lax
         @push arr
       else
@@ -376,11 +375,11 @@ registers.doto = (f) ->
 
 ###
 Map a given stream (in objectMode) through a provided async function
-f: (in, callback), where callback: (err, out)
+f: (in, callback), where callback: (err, out) ->
 Drops any null or undefined `out` values.
 
 Additional opt values:
-concurrency: number of concurrent asynchronous calls allowed.  Default unlimited.
+concurrency: number of concurrent asynchronous calls allowed.  Default in series.
 ###
 class AsyncMap extends Duplex
   constructor: (opt, f) ->
@@ -490,7 +489,7 @@ registers.debounce = (opt) ->
 
 ###
 # Mixins
-Now that we've registered everything, mixing the
+Now that we've registered everything, mixin the
 appropriate pieces.
 ###
 
