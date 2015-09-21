@@ -18,7 +18,7 @@ Install with `npm install pvc`.
 var pvc = require('pvc');
 
 // You can easily make an array into a stream
-var pipeline = pvc.source([1, 2, 3, 4, 5, 6, 7, 8, 9])
+pvc.source([1, 2, 3, 4, 5, 6, 7, 8, 9])
   .map( function (n) { return n + 1; } )
   // [2, 3, 4, 5, 6, 7, 8, 9, 10]
   .filter( function (n) { return n % 2 == 0; } )
@@ -53,21 +53,21 @@ Create a pvc Readable stream, from the argument if supplied.
 
 If there is no argument given, create a `PassThrough` source:
 ```js
-s = pvc.source()
-s.write(1)
-s.write('a')
-s.read() // 1
-s.read() // 2
-s.read() // null
+s = pvc.source();
+s.write(1);
+s.write('a');
+s.read(); // 1
+s.read(); // 'a'
+s.read(); // null
 ```
 
 If the argument is an array, create a readable stream from the array:
 ```js
-s = pvc.source([1, 'a', '1'])
-s.read() // 1
-s.read() // 'a'
-s.read() // '1'
-s.read() // null
+s = pvc.source([1, 'a', '1']);
+s.read(); // 1
+s.read(); // 'a'
+s.read(); // '1'
+s.read(); // null
 ```
 
 If the argument is a node Readable stream, augment it with the pvc functional
@@ -170,21 +170,21 @@ Transforms
 Limits the stream to the first `n` entries.
 
 ```js
-s = pvc.source( ['a', 'b', 'c', 'd', 'e'] ).limit(2)
-s.read() // 'a'
-s.read() // 'b'
-s.read() // null
+s = pvc.source( ['a', 'b', 'c', 'd', 'e'] ).limit(2);
+s.read(); // 'a'
+s.read(); // 'b'
+s.read(); // null
 ```
 
 ### skip
 Skips the first `n` entries.
 
 ```js
-s = pvc.source( ['a', 'b', 'c', 'd', 'e'] ).skip(2)
-s.read() // 'c'
-s.read() // 'd'
-s.read() // 'e'
-s.read() // null
+s = pvc.source( ['a', 'b', 'c', 'd', 'e'] ).skip(2);
+s.read(); // 'c'
+s.read(); // 'd'
+s.read(); // 'e'
+s.read(); // null
 ```
 
 ### map
@@ -307,20 +307,20 @@ input.  If `lax == true`, it will allow non-array inputs to pass through
 unchanged.
 
 ```js
-s = pvc.source([ [1], [2, 3] ]).pipe(pvc.separate())
-s.read() // 1
-s.read() // [2, 3]
-s.read() // null
+s = pvc.source([ [1], [2, 3] ]).separate();
+s.read(); // 1
+s.read(); // [2, 3]
+s.read(); // null
 
-s = pvc.separate()
-s.write( 1 )
+s = pvc.separate();
+s.write( 1 );
 s.on('error', function (e) {
   // Will emit an error because 1 is not an array!
-})
+});
 
-s = pvc.separate({ lax: true })
-s.write( 1 )
-s.read() // 1
+s = pvc.separate({ lax: true });
+s.write( 1 );
+s.read(); // 1
 ```
 
 ### split
