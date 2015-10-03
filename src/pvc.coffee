@@ -26,6 +26,10 @@ exports.mixin = mixin = (obj, useBase=false) ->
 Sources are various ways to start pipes.
 ###
 
+class PvcReadable extends Readable
+  constructor: ->
+    super objectMode: true
+
 ###
 Convert an array into a Readable stream.
 
@@ -34,10 +38,10 @@ source.read() # 1
 source.read() # 2
 source.read() # null
 ###
-class ArraySource extends Readable
+class ArraySource extends PvcReadable
   constructor: (@array) ->
-    super objectMode: true
     @index = 0
+    super()
 
   _read: ->
     if @index >= @array.length
@@ -52,7 +56,7 @@ Merge multiple streams into one.  The output stream will emit indescriminately
 from the input streams, with no order guarantees.  The parameter streams is
 an array of streams.
 ###
-class Merge extends Readable
+class Merge extends PvcReadable
   constructor: (streams) ->
     @streams = streams
     for s in streams
@@ -66,7 +70,7 @@ class Merge extends Readable
       s.on 'readable', =>
         @_pump()
 
-    super {objectMode:true}
+    super()
 
   _pump: ->
     for s in @streams
@@ -94,7 +98,7 @@ then
 zip emits {num: 1, alph: 'one'}, {num: 2, alph: 'two'}, {num: 3, alph: 'three'},
  ...
 ###
-class Zip extends Readable
+class Zip extends PvcReadable
   constructor: (@streamMap) ->
     @current = {}
     @keys = []
@@ -106,7 +110,7 @@ class Zip extends Readable
       s.on 'readable', =>
         @_pump()
 
-    super {objectMode:true}
+    super()
 
   _pump: ->
     canPush = true
@@ -164,15 +168,18 @@ exports.source = (source) ->
   # Take in an optional source
   unless source?
     return new PvcPassThrough()
+
   if Array.isArray(source)
     return new ArraySource(source)
-  # TODO: Don't double mixin things.
-  # if source instanceof PvcReadable
-  #   return source
+  # Don't double mixin things.
+  if source instanceof PvcReadable or source instanceof PvcTransform
+    return source
   # If it's a readable, just do the mixin
   if source instanceof Readable
     mixin source, true
     return source
+
+  throw new Error('Unable to make a source from object', source)
 
 
 
@@ -498,6 +505,4 @@ appropriate pieces.
 
 mixin PvcTransform
 mixin AsyncMap
-mixin ArraySource
-mixin Zip
-mixin Merge
+mixin PvcReadable

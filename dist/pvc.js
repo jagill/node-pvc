@@ -1,5 +1,5 @@
 (function() {
-  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PassThrough, PvcPassThrough, PvcTransform, Readable, Reduce, Separate, Sink, Skip, Split, ToArray, Transform, Writable, Zip, mixin, pipe, ref, registers,
+  var ArraySource, AsyncMap, Debounce, Duplex, Limit, Map, Merge, PassThrough, PvcPassThrough, PvcReadable, PvcTransform, Readable, Reduce, Separate, Sink, Skip, Split, ToArray, Transform, Writable, Zip, mixin, pipe, ref, registers,
     extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
@@ -36,6 +36,19 @@
   Sources are various ways to start pipes.
    */
 
+  PvcReadable = (function(superClass) {
+    extend(PvcReadable, superClass);
+
+    function PvcReadable() {
+      PvcReadable.__super__.constructor.call(this, {
+        objectMode: true
+      });
+    }
+
+    return PvcReadable;
+
+  })(Readable);
+
 
   /*
   Convert an array into a Readable stream.
@@ -51,10 +64,8 @@
 
     function ArraySource(array) {
       this.array = array;
-      ArraySource.__super__.constructor.call(this, {
-        objectMode: true
-      });
       this.index = 0;
+      ArraySource.__super__.constructor.call(this);
     }
 
     ArraySource.prototype._read = function() {
@@ -69,7 +80,7 @@
 
     return ArraySource;
 
-  })(Readable);
+  })(PvcReadable);
 
 
   /**
@@ -102,9 +113,7 @@
           };
         })(this));
       }
-      Merge.__super__.constructor.call(this, {
-        objectMode: true
-      });
+      Merge.__super__.constructor.call(this);
     }
 
     Merge.prototype._pump = function() {
@@ -126,7 +135,7 @@
 
     return Merge;
 
-  })(Readable);
+  })(PvcReadable);
 
   exports.merge = function(streams) {
     return new Merge(streams);
@@ -171,9 +180,7 @@
           };
         })(this));
       }
-      Zip.__super__.constructor.call(this, {
-        objectMode: true
-      });
+      Zip.__super__.constructor.call(this);
     }
 
     Zip.prototype._pump = function() {
@@ -212,7 +219,7 @@
 
     return Zip;
 
-  })(Readable);
+  })(PvcReadable);
 
   exports.zip = function(streamMap) {
     return new Zip(streamMap);
@@ -225,10 +232,14 @@
     if (Array.isArray(source)) {
       return new ArraySource(source);
     }
+    if (source instanceof PvcReadable || source instanceof PvcTransform) {
+      return source;
+    }
     if (source instanceof Readable) {
       mixin(source, true);
       return source;
     }
+    throw new Error('Unable to make a source from object', source);
   };
 
 
@@ -750,10 +761,6 @@
 
   mixin(AsyncMap);
 
-  mixin(ArraySource);
-
-  mixin(Zip);
-
-  mixin(Merge);
+  mixin(PvcReadable);
 
 }).call(this);

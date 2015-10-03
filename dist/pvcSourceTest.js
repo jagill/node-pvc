@@ -1,9 +1,11 @@
 (function() {
-  var assert, gather, pvc, sinon;
+  var PassThrough, assert, gather, pvc, sinon;
 
   assert = require('chai').assert;
 
   sinon = require('sinon');
+
+  PassThrough = require('stream').PassThrough;
 
   pvc = require('./pvc');
 
@@ -41,8 +43,37 @@
       assert.equal(s.read(), 1);
       return assert.isNull(s.read());
     });
-    xit('should make a streamSource from a Readable stream');
-    return xit('should leave a pvc stream unchanged');
+    it('should make a streamSource from a Readable stream', function(done) {
+      var pass, s;
+      pass = new PassThrough();
+      s = pvc.source(pass);
+      s.split().toArray(function(err, arr) {
+        assert.isNull(err);
+        assert.equal(arr.length, 2);
+        assert.equal(arr[0], 'this is the first line');
+        assert.equal(arr[1], 'and the second');
+        return done();
+      });
+      s.write('this is the f');
+      s.write('irst line\nan');
+      s.write('d the se');
+      s.write('cond');
+      return s.end();
+    });
+    it('should leave a pvc readable stream unchanged', function() {
+      var s, s2;
+      s = pvc.source();
+      s2 = pvc.source(s);
+      return assert.strictEqual(s, s2);
+    });
+    return it('should leave a pvc transform stream unchanged', function() {
+      var s, s2;
+      s = pvc.source().map(function(x) {
+        return x;
+      });
+      s2 = pvc.source(s);
+      return assert.strictEqual(s, s2);
+    });
   });
 
 }).call(this);

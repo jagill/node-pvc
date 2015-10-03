@@ -1,5 +1,6 @@
 {assert} = require 'chai'
 sinon = require 'sinon'
+{PassThrough} = require 'stream'
 
 pvc = require './pvc'
 
@@ -29,6 +30,28 @@ describe 'source', ->
     assert.equal s.read(), 1
     assert.isNull s.read()
 
-  xit 'should make a streamSource from a Readable stream'
+  it 'should make a streamSource from a Readable stream', (done) ->
+    pass = new PassThrough()
+    s = pvc.source pass
+    s.split().toArray (err, arr) ->
+      assert.isNull err
+      assert.equal arr.length, 2
+      assert.equal arr[0], 'this is the first line'
+      assert.equal arr[1], 'and the second'
+      done()
 
-  xit 'should leave a pvc stream unchanged'
+    s.write 'this is the f'
+    s.write 'irst line\nan'
+    s.write 'd the se'
+    s.write 'cond'
+    s.end()
+
+  it 'should leave a pvc readable stream unchanged', ->
+    s = pvc.source()
+    s2 = pvc.source(s)
+    assert.strictEqual s, s2
+
+  it 'should leave a pvc transform stream unchanged', ->
+    s = pvc.source().map (x) -> x
+    s2 = pvc.source(s)
+    assert.strictEqual s, s2
