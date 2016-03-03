@@ -361,3 +361,12 @@ describe 'skip', ->
         assert.isNull exs
         assert.deepEqual arr, [3]
         done()
+
+describe 'combinations', ->
+  it 'should chain write', ->
+    s = pvc.source()
+      .map (x) -> x * 2
+      .map (x) -> x * 2
+
+    s.write 1
+    assert.equal s.read(), 4

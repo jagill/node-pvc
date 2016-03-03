@@ -475,4 +475,17 @@
     });
   });
 
+  describe('combinations', function() {
+    return it('should chain write', function() {
+      var s;
+      s = pvc.source().map(function(x) {
+        return x * 2;
+      }).map(function(x) {
+        return x * 2;
+      });
+      s.write(1);
+      return assert.equal(s.read(), 4);
+    });
+  });
+
 }).call(this);
